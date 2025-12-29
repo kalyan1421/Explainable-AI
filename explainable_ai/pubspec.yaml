@@ -69,8 +69,22 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    # Pneumonia model
     - assets/pneumonia_model.tflite
     - assets/labels.txt
+    # Heart disease model
+    - assets/heart_model.tflite
+    - assets/heart_scaler.json
+    - assets/heart_mappings.json
+    - assets/heart_feature_importance.json
+    - assets/heart_flutter_guide.json
+    - assets/heart_metadata.json
+    # Diabetes model
+    - assets/diabetes_model.tflite
+    - assets/diabetes_scaler.json
+    - assets/diabetes_feature_importance.json
+    - assets/diabetes_flutter_guide.json
+    - assets/diabetes_metadata.json
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
