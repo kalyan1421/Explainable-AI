@@ -1,0 +1,55 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // X-Ray Images for Pneumonia Detection
+    match /xrays/{userId}/{allPaths=**} {
+      // Users can upload their own X-rays
+      allow write: if isOwner(userId) && 
+        request.resource.size < 10 * 1024 * 1024 && // Max 10MB
+        request.resource.contentType.matches('image/.*'); // Only images
+      
+      // Users can read their own X-rays, doctors can read all
+      allow read: if isOwner(userId) || 
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'doctor';
+    }
+    
+    // Profile Pictures
+    match /profiles/{userId}/{fileName} {
+      // Users can upload their own profile picture
+      allow write: if isOwner(userId) && 
+        request.resource.size < 5 * 1024 * 1024 && // Max 5MB
+        request.resource.contentType.matches('image/.*');
+      
+      // Anyone authenticated can read profile pictures
+      allow read: if isAuthenticated();
+    }
+    
+    // Medical Reports (PDFs)
+    match /reports/{userId}/{reportId} {
+      // Users can upload their own reports
+      allow write: if isOwner(userId) && 
+        request.resource.size < 20 * 1024 * 1024 && // Max 20MB
+        request.resource.contentType == 'application/pdf';
+      
+      // Users can read their own reports, doctors can read all
+      allow read: if isOwner(userId) || 
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'doctor';
+    }
+    
+    // Default: deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

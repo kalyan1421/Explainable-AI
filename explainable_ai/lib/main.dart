@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
-import 'screens/heart_risk_screen.dart';
-import 'screens/diabetes_risk_screen.dart';
-import 'screens/pneumonia_screen.dart'; // Renamed from on_device_screen
+import 'services/auth_service.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/patient/patient_dashboard.dart';
+import 'screens/doctor/doctor_dashboard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(MyApp());
 }
 
@@ -17,66 +17,54 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Explainable AI Healthcare',
+      title: 'Explainable AI Health',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
         useMaterial3: true,
+        colorSchemeSeed: Colors.blue,
       ),
-      home: HomeScreen(),
+      home: AuthWrapper(),
     );
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
+  @override
+  _AuthWrapperState createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  final AuthService _authService = AuthService();
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('AI Health Diagnostics')),
-      body: Padding(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildMenuButton(
-              context, 
-              "Heart Disease Risk", 
-              Icons.favorite, 
-              Colors.redAccent,
-              () => Navigator.push(context, MaterialPageRoute(builder: (_) => HeartRiskScreen())),
-            ),
-            SizedBox(height: 20),
-            _buildMenuButton(
-              context, 
-              "Diabetes Risk", 
-              Icons.water_drop, 
-              Colors.blueAccent,
-              () => Navigator.push(context, MaterialPageRoute(builder: (_) => DiabetesRiskScreen())),
-            ),
-            SizedBox(height: 20),
-            _buildMenuButton(
-              context, 
-              "Pneumonia Detection (X-Ray)", 
-              Icons.image_search, 
-              Colors.purpleAccent,
-              () => Navigator.push(context, MaterialPageRoute(builder: (_) => PneumoniaScreen())),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMenuButton(BuildContext context, String title, IconData icon, Color color, VoidCallback onTap) {
-    return ElevatedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 30, color: Colors.white),
-      label: Text(title, style: TextStyle(fontSize: 18, color: Colors.white)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        padding: EdgeInsets.symmetric(vertical: 20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      ),
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        
+        if (snapshot.hasData) {
+          // Check Role
+          return FutureBuilder<String>(
+            future: _authService.getUserRole(),
+            builder: (context, roleSnap) {
+              if (roleSnap.connectionState == ConnectionState.waiting) {
+                return Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+              
+              if (roleSnap.data == 'doctor') {
+                return DoctorDashboard();
+              } else {
+                return PatientDashboard();
+              }
+            },
+          );
+        }
+        
+        return LoginScreen();
+      },
     );
   }
 }

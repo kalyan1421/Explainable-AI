@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/risk_prediction_service.dart';
+import '../services/firebase_service.dart';
+import '../services/database_helper.dart';
 import '../widgets/feature_importance_chart.dart';
 
 class DiabetesRiskScreen extends StatefulWidget {
@@ -9,6 +11,8 @@ class DiabetesRiskScreen extends StatefulWidget {
 
 class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
   final RiskPredictionService _aiService = RiskPredictionService();
+  final FirebaseService _db = FirebaseService();
+  final DatabaseHelper _localDb = DatabaseHelper();
   final _formKey = GlobalKey<FormState>();
 
   // Controllers
@@ -23,6 +27,7 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
 
   double _riskResult = 0.0;
   bool _showResult = false;
+  bool _isLoading = false;
   List<Map<String, dynamic>> _explanations = [];
 
   @override
@@ -33,6 +38,19 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
 
   void _analyzeRisk() async {
     if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    Map<String, dynamic> inputMap = {
+      "Pregnancies": _pregnanciesCtrl.text,
+      "Glucose": _glucoseCtrl.text,
+      "BloodPressure": _bpCtrl.text,
+      "SkinThickness": _skinCtrl.text,
+      "Insulin": _insulinCtrl.text,
+      "BMI": _bmiCtrl.text,
+      "DiabetesPedigreeFunction": _dpfCtrl.text,
+      "Age": _ageCtrl.text,
+    };
 
     List<double> inputs = [
       double.parse(_pregnanciesCtrl.text),
@@ -45,56 +63,101 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
       double.parse(_ageCtrl.text),
     ];
 
-    var result = await _aiService.predictDiabetes(inputs);
+    try {
+      var result = await _aiService.predictDiabetes(inputs);
 
-    setState(() {
-      _riskResult = result['risk'];
+      setState(() {
+        _riskResult = result['risk'];
+        
+        // Process Explanations
+        Map<String, double> rawExpl = result['explanation'] ?? {};
+        _explanations = rawExpl.entries
+            .map((e) => {'feature': e.key, 'importance': e.value})
+            .toList();
+        _explanations.sort((a, b) => b['importance'].compareTo(a['importance']));
+        if (_explanations.length > 5) _explanations = _explanations.sublist(0, 5);
+
+        _showResult = true;
+        _isLoading = false;
+      });
+
+      // Save to Firebase and SQLite
+      String riskLevel = _riskResult > 0.7 ? "High" : (_riskResult > 0.4 ? "Medium" : "Low");
       
-      // Process Explanations
-      Map<String, double> rawExpl = result['explanation'] ?? {};
-      _explanations = rawExpl.entries
-          .map((e) => {'feature': e.key, 'importance': e.value})
-          .toList();
-      _explanations.sort((a, b) => b['importance'].compareTo(a['importance']));
-      if (_explanations.length > 5) _explanations = _explanations.sublist(0, 5);
+      await _db.saveRecord(
+        title: "Diabetes",
+        riskScore: _riskResult,
+        riskLevel: riskLevel,
+        inputs: inputMap,
+        explanation: result['explanation'] ?? {},
+      );
+      
+      await _localDb.savePrediction("diabetes", inputMap, result);
+      await _db.logPrediction("diabetes");
 
-      _showResult = true;
-    });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red)
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Diabetes Assessment")),
+      appBar: AppBar(
+        title: Text("Diabetes Assessment"),
+        backgroundColor: Colors.blue.shade50,
+      ),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
+              // AI Disclaimer
+              _buildDisclaimer(),
+              SizedBox(height: 16),
+              
               if (_showResult) ...[
                 _buildResultCard(),
                 SizedBox(height: 20),
                 FeatureImportanceChart(
                   features: _explanations,
-                  title: 'Top Risk Factors', // Now works because we added the parameter
+                  title: 'Top Risk Factors',
                 ),
+                _buildExplanationText(),
                 Divider(height: 40),
               ],
-              _buildInput("Pregnancies", _pregnanciesCtrl),
-              _buildInput("Glucose Level (mg/dL)", _glucoseCtrl),
-              _buildInput("Blood Pressure (mm Hg)", _bpCtrl),
-              _buildInput("Skin Thickness (mm)", _skinCtrl),
-              _buildInput("Insulin Level", _insulinCtrl),
-              _buildInput("BMI", _bmiCtrl),
-              _buildInput("Diabetes Pedigree Function", _dpfCtrl),
-              _buildInput("Age", _ageCtrl),
+              
+              Text("Patient Information", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(height: 10),
+              
+              _buildInput("Pregnancies", _pregnanciesCtrl, "Number of pregnancies"),
+              _buildInput("Glucose Level (mg/dL)", _glucoseCtrl, "Plasma glucose concentration"),
+              _buildInput("Blood Pressure (mm Hg)", _bpCtrl, "Diastolic blood pressure"),
+              _buildInput("Skin Thickness (mm)", _skinCtrl, "Triceps skin fold thickness"),
+              _buildInput("Insulin Level (mu U/ml)", _insulinCtrl, "2-Hour serum insulin"),
+              _buildInput("BMI", _bmiCtrl, "Body mass index"),
+              _buildInput("Diabetes Pedigree Function", _dpfCtrl, "Family history factor (0.0 - 2.5)"),
+              _buildInput("Age", _ageCtrl, "Age in years"),
               
               SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _analyzeRisk,
-                style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
-                child: Text("Analyze Risk"),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _isLoading ? null : _analyzeRisk,
+                  icon: _isLoading 
+                    ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Icon(Icons.analytics),
+                  label: Text(_isLoading ? "Analyzing..." : "Analyze Risk"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade600,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
               ),
             ],
           ),
@@ -103,30 +166,99 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
     );
   }
 
+  Widget _buildDisclaimer() {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.amber.shade300),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.amber.shade800),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "AI is an assistant, not a doctor. Always consult a healthcare professional for medical decisions.",
+              style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildResultCard() {
-    bool isHigh = _riskResult > 0.5;
+    bool isHigh = _riskResult > 0.7;
+    bool isMedium = _riskResult > 0.4 && _riskResult <= 0.7;
+    Color cardColor = isHigh ? Colors.red.shade50 : (isMedium ? Colors.orange.shade50 : Colors.green.shade50);
+    Color textColor = isHigh ? Colors.red : (isMedium ? Colors.orange : Colors.green);
+    String riskText = isHigh ? "HIGH RISK" : (isMedium ? "MEDIUM RISK" : "LOW RISK");
+    
     return Card(
-      color: isHigh ? Colors.red.shade50 : Colors.green.shade50,
+      color: cardColor,
+      elevation: 4,
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(20),
         child: Column(
           children: [
-            Text(isHigh ? "HIGH RISK DETECTED" : "LOW RISK", 
-                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isHigh ? Colors.red : Colors.green)),
-            Text("Confidence: ${(_riskResult * 100).toStringAsFixed(1)}%"),
+            Icon(
+              isHigh ? Icons.warning_amber_rounded : (isMedium ? Icons.info_outline : Icons.check_circle_outline),
+              size: 48,
+              color: textColor,
+            ),
+            SizedBox(height: 10),
+            Text(riskText, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor)),
+            SizedBox(height: 5),
+            Text("Confidence: ${(_riskResult * 100).toStringAsFixed(1)}%", style: TextStyle(fontSize: 16)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInput(String label, TextEditingController ctrl) {
+  Widget _buildExplanationText() {
+    if (_explanations.isEmpty) return SizedBox.shrink();
+    
+    String topFactors = _explanations.take(3).map((e) => e['feature']).join(", ");
+    String riskLevel = _riskResult > 0.7 ? "high" : (_riskResult > 0.4 ? "moderate" : "low");
+    
+    return Container(
+      margin: EdgeInsets.only(top: 16),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("AI Explanation", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade800)),
+          SizedBox(height: 8),
+          Text(
+            "Your $riskLevel risk is primarily influenced by: $topFactors. These factors contribute most significantly to the prediction.",
+            style: TextStyle(fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInput(String label, TextEditingController ctrl, String hint) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: ctrl,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(labelText: label, border: OutlineInputBorder()),
+        keyboardType: TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+        ),
+        validator: (v) => v!.isEmpty ? "Required" : null,
       ),
     );
   }

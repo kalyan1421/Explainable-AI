@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    function isDoctor() {
+      return isAuthenticated() && getUserRole() == 'doctor';
+    }
+    
+    function isPatient() {
+      return isAuthenticated() && getUserRole() == 'patient';
+    }
+    
+    // Users Collection
+    match /users/{userId} {
+      // Users can read and update their own profile
+      allow read: if isOwner(userId);
+      allow create: if isAuthenticated();
+      allow update: if isOwner(userId);
+      
+      // Doctors can read patient profiles (for clinical review)
+      allow read: if isDoctor();
+    }
+    
+    // Medical Records Collection
+    match /records/{recordId} {
+      // Patients can create their own records
+      allow create: if isAuthenticated() && request.resource.data.patientId == request.auth.uid;
+      
+      // Patients can read only their own records
+      allow read: if isAuthenticated() && (
+        resource.data.patientId == request.auth.uid || isDoctor()
+      );
+      
+      // Doctors can update records (for review status and notes)
+      allow update: if isDoctor() && (
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'doctorNotes', 'reviewedBy', 'reviewedAt'])
+      );
+      
+      // Patients can update their own records (limited fields)
+      allow update: if isOwner(resource.data.patientId) && (
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['inputs', 'explanation'])
+      );
+      
+      // No one can delete medical records (for audit compliance)
+      allow delete: if false;
+    }
+    
+    // Audit Logs Collection
+    match /audit_logs/{logId} {
+      // Anyone authenticated can create audit logs
+      allow create: if isAuthenticated();
+      
+      // Only doctors can read audit logs
+      allow read: if isDoctor();
+      
+      // Audit logs are immutable (no updates or deletes)
+      allow update, delete: if false;
+    }
+    
+    // Predictions History (Optional - if using separate collection)
+    match /predictions/{predictionId} {
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || isDoctor()
+      );
+      allow update, delete: if false; // Predictions are immutable
+    }
+  }
+}
+
