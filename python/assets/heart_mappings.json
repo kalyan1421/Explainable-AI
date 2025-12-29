@@ -1,0 +1,35 @@
+{
+  "sex": {
+    "Female": 0,
+    "Male": 1
+  },
+  "cp": {
+    "asymptomatic": 0,
+    "atypical angina": 1,
+    "non-anginal": 2,
+    "typical angina": 3
+  },
+  "fbs": {
+    "False": 0,
+    "True": 1
+  },
+  "restecg": {
+    "lv hypertrophy": 0,
+    "normal": 1,
+    "st-t abnormality": 2
+  },
+  "exang": {
+    "False": 0,
+    "True": 1
+  },
+  "slope": {
+    "downsloping": 0,
+    "flat": 1,
+    "upsloping": 2
+  },
+  "thal": {
+    "fixed defect": 0,
+    "normal": 1,
+    "reversable defect": 2
+  }
+}

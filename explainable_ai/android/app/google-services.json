@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "475478277892",
+    "project_id": "explainableai-1a76c",
+    "storage_bucket": "explainableai-1a76c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:475478277892:android:4a211dbffc0cb744751a51",
+        "android_client_info": {
+          "package_name": "com.example.explainable_ai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4UfNewG_1yJhsTnTDlpMKTMdFwQYVZSo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,33 @@
+{
+  "model_name": "Diabetes",
+  "files_needed": [
+    "diabetes_model.tflite",
+    "diabetes_scaler.json",
+    "diabetes_mappings.json",
+    "diabetes_feature_importance.json",
+    "diabetes_metadata.json"
+  ],
+  "flutter_integration_steps": {
+    "1_add_to_pubspec": [
+      "assets:",
+      "  - assets/diabetes_model.tflite",
+      "  - assets/diabetes_scaler.json",
+      "  - assets/diabetes_mappings.json"
+    ],
+    "2_install_package": "tflite_flutter: ^0.10.4",
+    "3_load_model": "await Interpreter.fromAsset('assets/diabetes_model.tflite')",
+    "4_preprocessing": {
+      "a_load_mappings": "Convert categorical: 'Male' -> 1",
+      "b_load_scaler": "Normalize: (value - mean) / std",
+      "c_create_input": "Float32List of normalized values"
+    },
+    "5_inference": {
+      "input_shape": "Must match model input",
+      "output_shape": "[1, 1] - probability value",
+      "interpretation": ">= 0.5 = High Risk, < 0.5 = Low Risk"
+    }
+  },
+  "example_code": {
+    "load_and_predict": "\n// Load model\nfinal interpreter = await Interpreter.fromAsset('assets/heart_model.tflite');\n\n// Load scaler\nfinal scalerJson = await rootBundle.loadString('assets/heart_scaler.json');\nfinal scaler = json.decode(scalerJson);\n\n// Normalize input\nfinal input = normalizeInput(rawInput, scaler);\n\n// Predict\nfinal output = List.filled(1, 0.0).reshape([1, 1]);\ninterpreter.run([input], output);\nfinal probability = output[0][0];\n            "
+  }
+}
