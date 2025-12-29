@@ -10,15 +10,21 @@
     "typical angina": 3
   },
   "fbs": {
+    "No": 0,
+    "Yes": 1,
     "False": 0,
     "True": 1
   },
   "restecg": {
-    "lv hypertrophy": 0,
+    "LV hypertrophy": 0,
     "normal": 1,
+    "ST-T abnormality": 2,
+    "lv hypertrophy": 0,
     "st-t abnormality": 2
   },
   "exang": {
+    "No": 0,
+    "Yes": 1,
     "False": 0,
     "True": 1
   },
