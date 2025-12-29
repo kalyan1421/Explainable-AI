@@ -13,11 +13,13 @@ class _SignupScreenState extends State<SignupScreen> {
   final _confirmPassCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _ageCtrl = TextEditingController();
+  final _doctorCodeCtrl = TextEditingController();
   final AuthService _auth = AuthService();
   
   bool _isDoctor = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _obscureDoctorCode = true;
   String _gender = "Male";
 
   void _signup() async {
@@ -31,6 +33,22 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     setState(() => _isLoading = true);
+    
+    // If registering as doctor, verify the code first
+    if (_isDoctor) {
+      bool isValidCode = await _auth.verifyDoctorCode(_doctorCodeCtrl.text.trim());
+      if (!isValidCode) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Invalid doctor registration code. Please contact admin."),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          )
+        );
+        return;
+      }
+    }
     
     String role = _isDoctor ? 'doctor' : 'patient';
     String? error = await _auth.signUp(
@@ -182,15 +200,59 @@ class _SignupScreenState extends State<SignupScreen> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: _isDoctor ? Colors.blue.shade200 : Colors.green.shade200),
                   ),
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text("Register as Doctor", style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(_isDoctor 
-                      ? "You'll have access to patient records and clinical validation"
-                      : "You'll have access to AI health screening features"),
-                    value: _isDoctor,
-                    onChanged: (val) => setState(() => _isDoctor = val),
-                    activeColor: Colors.blue,
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text("Register as Doctor", style: TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(_isDoctor 
+                          ? "You'll need an admin-provided registration code"
+                          : "You'll have access to AI health screening features"),
+                        value: _isDoctor,
+                        onChanged: (val) => setState(() => _isDoctor = val),
+                        activeColor: Colors.blue,
+                      ),
+                      
+                      // Doctor Code Field - Only show when registering as doctor
+                      if (_isDoctor) ...[
+                        SizedBox(height: 16),
+                        TextFormField(
+                          controller: _doctorCodeCtrl,
+                          obscureText: _obscureDoctorCode,
+                          decoration: InputDecoration(
+                            labelText: "Doctor Registration Code",
+                            hintText: "Enter code provided by admin",
+                            prefixIcon: Icon(Icons.key, color: Colors.blue),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscureDoctorCode ? Icons.visibility_off : Icons.visibility),
+                              onPressed: () => setState(() => _obscureDoctorCode = !_obscureDoctorCode),
+                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                          validator: (v) {
+                            if (_isDoctor && (v == null || v.isEmpty)) {
+                              return "Doctor code is required";
+                            }
+                            return null;
+                          },
+                        ),
+                        SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Contact the hospital administrator to get your registration code.",
+                                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 SizedBox(height: 24),
@@ -220,4 +282,3 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 }
-

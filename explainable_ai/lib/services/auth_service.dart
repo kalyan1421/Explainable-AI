@@ -67,6 +67,36 @@ class AuthService {
     await _auth.signOut();
   }
 
+  // Verify Doctor Registration Code against admin collection
+  Future<bool> verifyDoctorCode(String code) async {
+    try {
+      // Get the admin document from Firebase
+      DocumentSnapshot adminDoc = await _db.collection('admin').doc('admin').get();
+      
+      if (!adminDoc.exists) {
+        print("⚠️ Admin document not found");
+        return false;
+      }
+      
+      // Get the stored code
+      String? storedCode = adminDoc.get('code')?.toString();
+      
+      if (storedCode == null) {
+        print("⚠️ Doctor code not set in admin collection");
+        return false;
+      }
+      
+      // Compare codes
+      bool isValid = code == storedCode;
+      print(isValid ? "✅ Doctor code verified" : "❌ Invalid doctor code");
+      return isValid;
+      
+    } catch (e) {
+      print("❌ Error verifying doctor code: $e");
+      return false;
+    }
+  }
+
   // Update user profile
   Future<String?> updateProfile({
     String? name,

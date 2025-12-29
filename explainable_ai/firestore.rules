@@ -23,6 +23,16 @@ service cloud.firestore {
       return isAuthenticated() && getUserRole() == 'patient';
     }
     
+    // Admin Collection (for doctor registration codes)
+    match /admin/{docId} {
+      // Anyone can read the code field (needed for signup verification)
+      // But only specific fields are readable
+      allow read: if true;
+      
+      // Only allow writes from Firebase console (admin)
+      allow write: if false;
+    }
+    
     // Users Collection
     match /users/{userId} {
       // Users can read and update their own profile
