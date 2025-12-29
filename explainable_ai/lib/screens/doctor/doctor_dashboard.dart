@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../services/firebase_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_guard.dart';
 import 'case_review_screen.dart';
 import 'audit_log_screen.dart';
 

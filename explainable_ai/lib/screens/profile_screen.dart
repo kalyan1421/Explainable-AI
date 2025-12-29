@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_service.dart';
+import 'patient/medical_details_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   @override
@@ -11,6 +12,20 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseService _db = FirebaseService();
   final AuthService _auth = AuthService();
+
+  Future<void> _openMedicalDetails(Map<String, dynamic>? data) async {
+    final updated = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MedicalDetailsScreen(initialData: data),
+      ),
+    );
+    if (updated == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Medical details updated"), backgroundColor: Colors.green),
+      );
+    }
+  }
 
   void _showEditDialog(Map<String, dynamic>? data) {
     final nameCtrl = TextEditingController(text: data?['name'] ?? '');
@@ -195,10 +210,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Info Cards
               _buildInfoCard("Personal Information", [
                 _infoRow(Icons.email, "Email", data?['email'] ?? "N/A"),
-                _infoRow(Icons.cake, "Age", data?['age']?.toString() ?? "Not set"),
                 _infoRow(Icons.wc, "Gender", data?['gender'] ?? "Not set"),
-                _infoRow(Icons.bloodtype, "Blood Group", data?['bloodGroup'] ?? "Not set"),
                 _infoRow(Icons.phone, "Phone", data?['phone'] ?? "Not set"),
+              ]),
+              SizedBox(height: 16),
+              _buildInfoCard("Medical Details", [
+                _infoRow(Icons.cake, "Age", data?['age']?.toString() ?? "Not set"),
+                _infoRow(Icons.bloodtype, "Blood Group", data?['bloodGroup'] ?? "Not set"),
+                SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openMedicalDetails(data),
+                    icon: Icon(Icons.edit_note),
+                    label: Text("Update Medical Details"),
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
               ]),
               SizedBox(height: 16),
               

@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
+import 'services/role_guard.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/patient/patient_dashboard.dart';
 import 'screens/doctor/doctor_dashboard.dart';

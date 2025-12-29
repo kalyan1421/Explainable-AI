@@ -25,12 +25,19 @@ class FirebaseService {
 
     // Fetch Patient Name
     DocumentSnapshot userDoc = await _db.collection('users').doc(userId).get();
-    String userName = userDoc.get('name') ?? "Unknown";
+    Map<String, dynamic> userData = (userDoc.data() as Map<String, dynamic>?) ?? {};
+    String userName = userData['name'] ?? "Unknown";
+    int? patientAge = userData['age'];
+    String? patientGender = userData['gender'];
+    String? patientBloodGroup = userData['bloodGroup'];
 
     // Save to GLOBAL 'records' collection for Doctors to see
     await _db.collection('records').add({
       'patientId': userId,
       'patientName': userName,
+      'patientAge': patientAge,
+      'patientGender': patientGender,
+      'patientBloodGroup': patientBloodGroup,
       'title': title,
       'riskScore': riskScore,
       'riskLevel': riskLevel,

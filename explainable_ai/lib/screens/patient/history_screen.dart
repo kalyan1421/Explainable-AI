@@ -6,6 +6,7 @@ import 'package:printing/printing.dart';
 import 'dart:convert';
 import '../../services/firebase_service.dart';
 import '../../services/database_helper.dart';
+import 'prediction_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   @override
@@ -187,14 +188,15 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
           padding: EdgeInsets.all(10),
           itemBuilder: (context, index) {
             var data = docs[index].data() as Map<String, dynamic>;
-            return _buildCloudHistoryCard(data);
+            String recordId = docs[index].id;
+            return _buildCloudHistoryCard(data, recordId);
           },
         );
       },
     );
   }
 
-  Widget _buildCloudHistoryCard(Map<String, dynamic> data) {
+  Widget _buildCloudHistoryCard(Map<String, dynamic> data, String recordId) {
     // UI logic for status
     IconData statusIcon = Icons.access_time;
     Color statusColor = Colors.orange;
@@ -214,7 +216,20 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
     return Card(
       margin: EdgeInsets.only(bottom: 12),
       elevation: 2,
-      child: ExpansionTile(
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PredictionDetailScreen(
+                data: data,
+                recordId: recordId,
+                isDoctor: false,
+              ),
+            ),
+          );
+        },
+        child: ExpansionTile(
         leading: Container(
           padding: EdgeInsets.all(8),
           decoration: BoxDecoration(
@@ -314,10 +329,29 @@ class _HistoryScreenState extends State<HistoryScreen> with SingleTickerProvider
                     foregroundColor: Colors.white,
                   ),
                 ),
+                SizedBox(height: 8),
+                // View Details Button
+                OutlinedButton.icon(
+                  icon: Icon(Icons.visibility),
+                  label: Text("View Full Details"),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PredictionDetailScreen(
+                          data: data,
+                          recordId: recordId,
+                          isDoctor: false,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
         ],
+        ),
       ),
     );
   }

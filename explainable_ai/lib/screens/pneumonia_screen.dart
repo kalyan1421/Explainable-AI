@@ -1,9 +1,13 @@
 import 'dart:io';
+import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:image/image.dart' as img;
+import '../services/heatmap_helper.dart';
 import '../services/firebase_service.dart';
 import '../services/database_helper.dart';
 
@@ -14,11 +18,13 @@ class PneumoniaScreen extends StatefulWidget {
 
 class _PneumoniaScreenState extends State<PneumoniaScreen> {
   File? _image;
-  String _result = "";
+  Uint8List? _heatmapOverlay;
+  String _result = "Upload X-Ray";
   double _confidence = 0.0;
   bool _isLoading = false;
-  bool _showResult = false;
+  
   Interpreter? _interpreter;
+  List<double>? _denseWeights;
   
   final FirebaseService _db = FirebaseService();
   final DatabaseHelper _localDb = DatabaseHelper();
@@ -26,286 +32,198 @@ class _PneumoniaScreenState extends State<PneumoniaScreen> {
   @override
   void initState() {
     super.initState();
-    _loadModel();
+    _loadAssets();
   }
 
-  Future<void> _loadModel() async {
+  Future<void> _loadAssets() async {
     try {
-      _interpreter = await Interpreter.fromAsset('assets/pneumonia_model.tflite');
-      print("✅ X-Ray Model Loaded");
+      // 1. Load Multi-Output Model
+      _interpreter = await Interpreter.fromAsset('assets/pneumonia_xai_model.tflite');
+      
+      // 2. Load Weights JSON
+      String jsonString = await rootBundle.loadString('assets/pneumonia_weights.json');
+      var jsonData = json.decode(jsonString);
+      _denseWeights = List<double>.from(jsonData['weights']);
+      
+      print("✅ Offline XAI System Ready. Weights loaded: ${_denseWeights?.length}");
     } catch (e) {
-      print("Error loading model: $e");
+      print("❌ Error loading assets: $e");
     }
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    // Request permissions first
-    if (source == ImageSource.camera) {
-      await Permission.camera.request();
-    } else {
-      await Permission.storage.request();
-    }
-    
-    final ImagePicker picker = ImagePicker();
-    final XFile? pickedFile = await picker.pickImage(source: source);
+  Future<void> _runInference(File imageFile) async {
+    if (_interpreter == null || _denseWeights == null) return;
 
+    setState(() => _isLoading = true);
+
+    try {
+      // --- A. Preprocess ---
+      var imageBytes = await imageFile.readAsBytes();
+      img.Image? originalImage = img.decodeImage(imageBytes);
+      img.Image resized = img.copyResize(originalImage!, width: 224, height: 224);
+
+      var input = List.generate(1, (i) => List.generate(224, (y) => List.generate(224, (x) {
+        var p = resized.getPixel(x, y);
+        return [p.r / 255.0, p.g / 255.0, p.b / 255.0];
+      })));
+
+      // --- B. Prepare Outputs ---
+      // Get Output Tensor Shapes dynamically
+      var outputTensors = _interpreter!.getOutputTensors();
+      var shape0 = outputTensors[0].shape; // Prediction [1, 1]
+      var shape1 = outputTensors[1].shape; // Features [1, 7, 7, 1280] or similar
+
+      var outputPred = List.filled(shape0.reduce((a, b) => a * b), 0.0).reshape(shape0);
+      var outputFeatures = List.filled(shape1.reduce((a, b) => a * b), 0.0).reshape(shape1);
+
+      var outputs = {0: outputPred, 1: outputFeatures};
+
+      // --- C. Run Inference ---
+      _interpreter!.runForMultipleInputs([input], outputs);
+
+      // --- D. Process Results ---
+      double risk = outputPred[0][0];
+      
+      // --- E. Generate Heatmap ---
+      Uint8List? heatmapBytes;
+      if (risk > 0.3) { 
+        // Flatten features
+        List<double> flatFeatures = (outputFeatures[0] as List)
+            .expand((row) => (row as List).expand((col) => (col as List<double>)))
+            .toList()
+            .cast<double>();
+
+        // DYNAMIC CALCULATION (Fixes the crash)
+        int channels = _denseWeights!.length; // Use actual weights length (e.g., 128)
+        int totalFeatures = flatFeatures.length;
+        
+        // Ensure dimensions match to prevent crash
+        if (totalFeatures % channels == 0) {
+           int gridSize = sqrt(totalFeatures / channels).toInt(); // e.g. 7
+           
+           heatmapBytes = HeatmapHelper.generateHeatmap(
+            flatFeatures, 
+            _denseWeights!, 
+            gridSize, 
+            channels, 
+            300, 300 
+          );
+        } else {
+          print("⚠️ Warning: Feature/Weight mismatch. Features: $totalFeatures, Weights: $channels");
+        }
+      }
+
+      setState(() {
+        _confidence = risk;
+        _result = risk > 0.5 ? "PNEUMONIA DETECTED" : "NORMAL";
+        _heatmapOverlay = heatmapBytes;
+        _isLoading = false;
+      });
+
+      // Save to Firebase and SQLite
+      String riskLevel = risk > 0.5 ? "High" : "Low";
+      Map<String, dynamic> inputs = {"imagePath": imageFile.path};
+      Map<String, dynamic> explanation = {
+        "X-Ray Analysis": risk,
+        "hasHeatmap": heatmapBytes != null,
+      };
+      
+      await _db.saveRecord(
+        title: "Pneumonia",
+        riskScore: risk,
+        riskLevel: riskLevel,
+        inputs: inputs,
+        explanation: explanation,
+      );
+      
+      await _localDb.savePrediction("pneumonia", inputs, {"risk": risk, "explanation": explanation});
+      await _db.logPrediction("pneumonia");
+
+    } catch (e) {
+      print("❌ Inference Error: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       setState(() {
         _image = File(pickedFile.path);
-        _isLoading = true;
-        _showResult = false;
+        _heatmapOverlay = null;
+        _result = "Analyzing...";
       });
       await _runInference(_image!);
     }
   }
 
-  Future<void> _runInference(File imageFile) async {
-    if (_interpreter == null) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Model not loaded"), backgroundColor: Colors.red)
-      );
-      return;
-    }
-
-    try {
-      // 1. Preprocess: Resize to 224x224 & Normalize
-      var imageBytes = await imageFile.readAsBytes();
-      img.Image? originalImage = img.decodeImage(imageBytes);
-      img.Image resizedImage = img.copyResize(originalImage!, width: 224, height: 224);
-
-      // 2. Convert to Float32 List [1, 224, 224, 3]
-      var input = List.generate(1, (i) => List.generate(224, (y) => List.generate(224, (x) {
-        var pixel = resizedImage.getPixel(x, y);
-        return [pixel.r / 255.0, pixel.g / 255.0, pixel.b / 255.0];
-      })));
-
-      // 3. Inference
-      var output = List.filled(1 * 1, 0.0).reshape([1, 1]);
-      _interpreter!.run(input, output);
-
-      double score = output[0][0];
-      bool isPneumonia = score > 0.5;
-
-      setState(() {
-        _result = isPneumonia ? "PNEUMONIA DETECTED" : "NORMAL";
-        _confidence = isPneumonia ? score : 1 - score;
-        _isLoading = false;
-        _showResult = true;
-      });
-
-      // Save to Firebase and SQLite
-      String riskLevel = isPneumonia ? "High" : "Low";
-      Map<String, dynamic> inputs = {"imagePath": imageFile.path};
-      Map<String, dynamic> resultData = {
-        "risk": score,
-        "isPneumonia": isPneumonia,
-        "explanation": {"X-Ray Analysis": isPneumonia ? score : 1 - score},
-      };
-      
-      await _db.saveRecord(
-        title: "Pneumonia",
-        riskScore: score,
-        riskLevel: riskLevel,
-        inputs: inputs,
-        explanation: resultData['explanation'],
-      );
-      
-      await _localDb.savePrediction("pneumonia", inputs, resultData);
-      await _db.logPrediction("pneumonia");
-
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error analyzing image: $e"), backgroundColor: Colors.red)
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    bool isDanger = _confidence > 0.5;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Pneumonia Detection"),
-        backgroundColor: Colors.purple.shade50,
-      ),
+      appBar: AppBar(title: Text("Visual X-Ray Analysis")),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(20),
         child: Column(
           children: [
-            // AI Disclaimer
-            _buildDisclaimer(),
-            SizedBox(height: 20),
-            
-            // Image Preview
             Container(
-              height: 300,
-              width: double.infinity,
+              height: 300, width: 300,
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border.all(color: Colors.grey.shade300, width: 2),
-                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(12)
               ),
-              child: _image == null
-                  ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_a_photo, size: 60, color: Colors.grey.shade400),
-                        SizedBox(height: 10),
-                        Text("Upload Chest X-Ray", style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
-                      ],
-                    )
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.file(_image!, fit: BoxFit.cover),
-                    ),
-            ),
-            SizedBox(height: 20),
-            
-            // Upload Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : () => _pickImage(ImageSource.gallery),
-                    icon: Icon(Icons.photo_library),
-                    label: Text("Gallery"),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: Colors.purple.shade600,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : () => _pickImage(ImageSource.camera),
-                    icon: Icon(Icons.camera_alt),
-                    label: Text("Camera"),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      backgroundColor: Colors.purple.shade400,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 30),
-            
-            // Loading Indicator
-            if (_isLoading)
-              Column(
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  CircularProgressIndicator(color: Colors.purple),
-                  SizedBox(height: 10),
-                  Text("Analyzing X-Ray...", style: TextStyle(color: Colors.grey.shade600)),
+                  if (_image != null) 
+                    Image.file(_image!, fit: BoxFit.cover),
+                  if (_heatmapOverlay != null)
+                    Opacity(
+                      opacity: 0.6,
+                      child: Image.memory(_heatmapOverlay!, fit: BoxFit.cover, gaplessPlayback: true),
+                    ),
+                  if (_image == null)
+                    Center(child: Icon(Icons.add_photo_alternate, size: 60, color: Colors.grey)),
+                  if (_isLoading)
+                    Container(color: Colors.black45, child: Center(child: CircularProgressIndicator())),
                 ],
               ),
-            
-            // Results
-            if (_showResult && !_isLoading) ...[
-              _buildResultCard(),
-              SizedBox(height: 20),
-              _buildExplanationCard(),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDisclaimer() {
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.amber.shade300),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, color: Colors.amber.shade800),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              "AI is an assistant, not a doctor. X-ray analysis should be confirmed by a radiologist.",
-              style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultCard() {
-    bool isPneumonia = _result.contains("PNEUMONIA");
-    
-    return Card(
-      color: isPneumonia ? Colors.red.shade50 : Colors.green.shade50,
-      elevation: 4,
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Icon(
-              isPneumonia ? Icons.warning_amber_rounded : Icons.check_circle_outline,
-              size: 60,
-              color: isPneumonia ? Colors.red : Colors.green,
-            ),
-            SizedBox(height: 12),
-            Text(
-              _result,
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: isPneumonia ? Colors.red : Colors.green,
+            SizedBox(height: 15),
+            if (_heatmapOverlay != null)
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.circle, color: Colors.red.withOpacity(0.6), size: 16),
+                SizedBox(width: 8),
+                Text("Red Highlights = AI Focus Area", style: TextStyle(fontWeight: FontWeight.bold)),
+              ]),
+            SizedBox(height: 20),
+            Card(
+              elevation: 4,
+              color: isDanger ? Colors.red.shade50 : Colors.green.shade50,
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Text(_result, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isDanger ? Colors.red : Colors.green)),
+                    Text("Confidence: ${(_confidence * 100).toStringAsFixed(1)}%", style: TextStyle(fontSize: 18)),
+                  ],
+                ),
               ),
             ),
-            SizedBox(height: 8),
-            Text(
-              "Confidence: ${(_confidence * 100).toStringAsFixed(1)}%",
-              style: TextStyle(fontSize: 18),
+            SizedBox(height: 30),
+            ElevatedButton.icon(
+              onPressed: _pickImage,
+              icon: Icon(Icons.upload_file),
+              label: Text("Select X-Ray Image"),
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                textStyle: TextStyle(fontSize: 18)
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildExplanationCard() {
-    bool isPneumonia = _result.contains("PNEUMONIA");
-    
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.lightbulb_outline, color: Colors.blue.shade700),
-              SizedBox(width: 8),
-              Text("AI Explanation", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue.shade800)),
-            ],
-          ),
-          SizedBox(height: 12),
-          Text(
-            isPneumonia 
-              ? "The AI detected patterns in the X-ray that are consistent with pneumonia. Areas of opacity or consolidation may indicate infection. Please consult a healthcare professional for proper diagnosis and treatment."
-              : "The AI did not detect significant patterns associated with pneumonia in this X-ray. The lung fields appear relatively clear. However, this should be confirmed by a qualified radiologist.",
-            style: TextStyle(fontSize: 14, height: 1.5),
-          ),
-          SizedBox(height: 12),
-          Text(
-            "Note: Grad-CAM visualization highlighting affected areas can be added for enhanced explainability.",
-            style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey.shade600),
-          ),
-        ],
       ),
     );
   }

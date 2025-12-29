@@ -34,6 +34,36 @@ class _CaseReviewScreenState extends State<CaseReviewScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Review Saved Successfully")));
   }
 
+  Widget _buildPatientContext() {
+    final age = widget.data['patientAge'];
+    final blood = widget.data['patientBloodGroup'];
+    final gender = widget.data['patientGender'];
+
+    if (age == null && blood == null && gender == null) {
+      return Text("No patient medical details provided", style: TextStyle(color: Colors.grey.shade600));
+    }
+
+    List<Widget> chips = [];
+    if (age != null) chips.add(_infoChip(Icons.cake, "Age: $age"));
+    if (gender != null && gender.toString().isNotEmpty) chips.add(_infoChip(Icons.wc, "Gender: $gender"));
+    if (blood != null && blood.toString().isNotEmpty) chips.add(_infoChip(Icons.bloodtype, "Blood: $blood"));
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: chips,
+    );
+  }
+
+  Widget _infoChip(IconData icon, String label) {
+    return Chip(
+      avatar: Icon(icon, size: 16),
+      label: Text(label),
+      backgroundColor: Colors.blue.shade50,
+      shape: StadiumBorder(side: BorderSide(color: Colors.blue.shade100)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Process Features for Chart
@@ -56,6 +86,8 @@ class _CaseReviewScreenState extends State<CaseReviewScreen> {
             Text("Patient: ${widget.data['patientName']}", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             Text("AI Predicted Risk: ${(widget.data['riskScore'] * 100).toStringAsFixed(1)}%", 
               style: TextStyle(fontSize: 18, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            _buildPatientContext(),
             Divider(height: 30),
 
             // AI Explanation
