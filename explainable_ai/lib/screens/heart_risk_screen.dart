@@ -12,23 +12,25 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _result;
 
-  // Form controllers
+  // Form key
   final _formKey = GlobalKey<FormState>();
 
-  // All 13 required features for Heart Disease prediction
-  double? _age;
+  // Text Controllers to persist values
+  final _ageController = TextEditingController();
+  final _restingBPController = TextEditingController();
+  final _cholesterolController = TextEditingController();
+  final _maxHeartRateController = TextEditingController();
+  final _oldpeakController = TextEditingController();
+
+  // Dropdown selections
   String? _selectedSex;
   String? _selectedChestPainType;
-  double? _restingBP;
-  double? _cholesterol;
-  String? _fastingBloodSugar;  // fbs
-  String? _restingECG;          // restecg
-  double? _maxHeartRate;        // thalch
-  String? _exerciseAngina;      // exang
-  double? _oldpeak;             // ST depression
-  String? _slope;               // slope
-  double? _ca;                  // number of major vessels
-  String? _thal;                // thalassemia
+  String? _fastingBloodSugar;
+  String? _restingECG;
+  String? _exerciseAngina;
+  String? _slope;
+  double? _ca;
+  String? _thal;
 
   @override
   void initState() {
@@ -57,16 +59,16 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
     try {
       // Build input data with all 13 features
       final input = {
-        'age': _age!,
+        'age': double.parse(_ageController.text),
         'sex': _selectedSex!,
         'cp': _selectedChestPainType!,
-        'trestbps': _restingBP!,
-        'chol': _cholesterol!,
+        'trestbps': double.parse(_restingBPController.text),
+        'chol': double.parse(_cholesterolController.text),
         'fbs': _fastingBloodSugar!,
         'restecg': _restingECG!,
-        'thalch': _maxHeartRate!,
+        'thalch': double.parse(_maxHeartRateController.text),
         'exang': _exerciseAngina!,
-        'oldpeak': _oldpeak!,
+        'oldpeak': double.parse(_oldpeakController.text),
         'slope': _slope!,
         'ca': _ca!,
         'thal': _thal!,
@@ -157,6 +159,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
             
             // Age
             TextFormField(
+              controller: _ageController,
               decoration: InputDecoration(
                 labelText: 'Age',
                 hintText: 'Enter age in years',
@@ -164,12 +167,12 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
               ),
               keyboardType: TextInputType.number,
               validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-              onChanged: (v) => _age = double.tryParse(v),
             ),
             SizedBox(height: 16),
 
             // Sex
             DropdownButtonFormField<String>(
+              value: _selectedSex,
               decoration: InputDecoration(
                 labelText: 'Sex',
                 border: OutlineInputBorder(),
@@ -187,6 +190,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Chest Pain Type
             DropdownButtonFormField<String>(
+              value: _selectedChestPainType,
               decoration: InputDecoration(
                 labelText: 'Chest Pain Type',
                 border: OutlineInputBorder(),
@@ -201,6 +205,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Exercise Induced Angina
             DropdownButtonFormField<String>(
+              value: _exerciseAngina,
               decoration: InputDecoration(
                 labelText: 'Exercise Induced Angina',
                 border: OutlineInputBorder(),
@@ -218,6 +223,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Resting Blood Pressure
             TextFormField(
+              controller: _restingBPController,
               decoration: InputDecoration(
                 labelText: 'Resting Blood Pressure (mm Hg)',
                 hintText: 'e.g., 120',
@@ -225,12 +231,12 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
               ),
               keyboardType: TextInputType.number,
               validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-              onChanged: (v) => _restingBP = double.tryParse(v),
             ),
             SizedBox(height: 16),
 
             // Max Heart Rate
             TextFormField(
+              controller: _maxHeartRateController,
               decoration: InputDecoration(
                 labelText: 'Maximum Heart Rate Achieved',
                 hintText: 'e.g., 150',
@@ -238,7 +244,6 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
               ),
               keyboardType: TextInputType.number,
               validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-              onChanged: (v) => _maxHeartRate = double.tryParse(v),
             ),
             SizedBox(height: 24),
 
@@ -247,6 +252,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Cholesterol
             TextFormField(
+              controller: _cholesterolController,
               decoration: InputDecoration(
                 labelText: 'Serum Cholesterol (mg/dl)',
                 hintText: 'e.g., 200',
@@ -254,12 +260,12 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
               ),
               keyboardType: TextInputType.number,
               validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-              onChanged: (v) => _cholesterol = double.tryParse(v),
             ),
             SizedBox(height: 16),
 
             // Fasting Blood Sugar
             DropdownButtonFormField<String>(
+              value: _fastingBloodSugar,
               decoration: InputDecoration(
                 labelText: 'Fasting Blood Sugar > 120 mg/dl',
                 border: OutlineInputBorder(),
@@ -277,6 +283,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Resting ECG
             DropdownButtonFormField<String>(
+              value: _restingECG,
               decoration: InputDecoration(
                 labelText: 'Resting ECG Results',
                 border: OutlineInputBorder(),
@@ -291,6 +298,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // ST Depression (Oldpeak)
             TextFormField(
+              controller: _oldpeakController,
               decoration: InputDecoration(
                 labelText: 'ST Depression (Oldpeak)',
                 hintText: 'e.g., 1.5',
@@ -298,12 +306,12 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
               ),
               keyboardType: TextInputType.numberWithOptions(decimal: true),
               validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-              onChanged: (v) => _oldpeak = double.tryParse(v),
             ),
             SizedBox(height: 16),
 
             // Slope
             DropdownButtonFormField<String>(
+              value: _slope,
               decoration: InputDecoration(
                 labelText: 'Slope of Peak Exercise ST Segment',
                 border: OutlineInputBorder(),
@@ -321,6 +329,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Number of Major Vessels
             DropdownButtonFormField<double>(
+              value: _ca,
               decoration: InputDecoration(
                 labelText: 'Number of Major Vessels (0-3)',
                 border: OutlineInputBorder(),
@@ -335,6 +344,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
             // Thalassemia
             DropdownButtonFormField<String>(
+              value: _thal,
               decoration: InputDecoration(
                 labelText: 'Thalassemia',
                 border: OutlineInputBorder(),
@@ -388,6 +398,12 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
 
   @override
   void dispose() {
+    // Dispose controllers
+    _ageController.dispose();
+    _restingBPController.dispose();
+    _cholesterolController.dispose();
+    _maxHeartRateController.dispose();
+    _oldpeakController.dispose();
     _service.dispose();
     super.dispose();
   }
