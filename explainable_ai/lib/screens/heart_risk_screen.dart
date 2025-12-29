@@ -52,7 +52,7 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
       "chol": _cholCtrl.text,
       "fbs": _fbs,
       "restecg": _restecg,
-      "thalach": _thalachCtrl.text,
+      "thalch": _thalachCtrl.text,  // Note: matches scaler feature name
       "exang": _exang,
       "oldpeak": _oldpeakCtrl.text,
       "slope": _slope,

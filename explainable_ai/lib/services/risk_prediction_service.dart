@@ -64,14 +64,18 @@ class RiskPredictionService {
 
     for (String feature in featureNames) {
       var val = userInputs[feature];
-      if (val is String) {
+      if (val == null || val.toString().isEmpty) {
+        print("⚠️ Missing value for feature: $feature");
+        numericVector.add(0.0);
+      } else if (val is String) {
         if (_heartMappings!.containsKey(feature) && _heartMappings![feature].containsKey(val)) {
           numericVector.add(_heartMappings![feature][val].toDouble());
         } else {
-          numericVector.add(0.0);
+          // Try to parse as double, otherwise default to 0.0
+          numericVector.add(double.tryParse(val) ?? 0.0);
         }
       } else {
-        numericVector.add(double.parse(val.toString()));
+        numericVector.add(double.tryParse(val.toString()) ?? 0.0);
       }
     }
 
