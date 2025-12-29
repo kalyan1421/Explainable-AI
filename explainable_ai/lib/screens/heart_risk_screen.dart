@@ -2,409 +2,163 @@ import 'package:flutter/material.dart';
 import '../services/risk_prediction_service.dart';
 import '../widgets/feature_importance_chart.dart';
 
+
 class HeartRiskScreen extends StatefulWidget {
   @override
   _HeartRiskScreenState createState() => _HeartRiskScreenState();
 }
 
 class _HeartRiskScreenState extends State<HeartRiskScreen> {
-  final _service = RiskPredictionService();
-  bool _isLoading = true;
-  Map<String, dynamic>? _result;
-
-  // Form key
+  final RiskPredictionService _aiService = RiskPredictionService();
   final _formKey = GlobalKey<FormState>();
 
-  // Text Controllers to persist values
-  final _ageController = TextEditingController();
-  final _restingBPController = TextEditingController();
-  final _cholesterolController = TextEditingController();
-  final _maxHeartRateController = TextEditingController();
-  final _oldpeakController = TextEditingController();
+  // Controllers
+  final TextEditingController _ageCtrl = TextEditingController(text: "55");
+  final TextEditingController _bpCtrl = TextEditingController(text: "140");
+  final TextEditingController _cholCtrl = TextEditingController(text: "240");
+  final TextEditingController _thalachCtrl = TextEditingController(text: "150");
+  final TextEditingController _oldpeakCtrl = TextEditingController(text: "1.5");
 
-  // Dropdown selections
-  String? _selectedSex;
-  String? _selectedChestPainType;
-  String? _fastingBloodSugar;
-  String? _restingECG;
-  String? _exerciseAngina;
-  String? _slope;
-  double? _ca;
-  String? _thal;
+  // Dropdown Values (Must match mappings.json keys)
+  String _sex = "Male";
+  String _cp = "typical angina";
+  String _fbs = "TRUE";
+  String _restecg = "normal";
+  String _exang = "FALSE";
+  String _slope = "flat";
+  String _ca = "0";
+  String _thal = "normal";
+
+  // Result State
+  bool _showResult = false;
+  double _riskScore = 0.0;
+  List<Map<String, dynamic>> _explanations = [];
 
   @override
   void initState() {
     super.initState();
-    _initializeModel();
+    _aiService.loadAssets();
   }
 
-  Future<void> _initializeModel() async {
-    setState(() => _isLoading = true);
-    try {
-      await _service.initialize('heart');
-      setState(() => _isLoading = false);
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading model: $e')),
-      );
-    }
-  }
-
-  Future<void> _predict() async {
+  void _predict() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    // Map inputs to what the Python model expects
+    Map<String, dynamic> inputs = {
+      "age": _ageCtrl.text,
+      "sex": _sex,
+      "cp": _cp,
+      "trestbps": _bpCtrl.text,
+      "chol": _cholCtrl.text,
+      "fbs": _fbs,
+      "restecg": _restecg,
+      "thalach": _thalachCtrl.text,
+      "exang": _exang,
+      "oldpeak": _oldpeakCtrl.text,
+      "slope": _slope,
+      "ca": _ca,
+      "thal": _thal,
+    };
 
-    try {
-      // Build input data with all 13 features
-      final input = {
-        'age': double.parse(_ageController.text),
-        'sex': _selectedSex!,
-        'cp': _selectedChestPainType!,
-        'trestbps': double.parse(_restingBPController.text),
-        'chol': double.parse(_cholesterolController.text),
-        'fbs': _fastingBloodSugar!,
-        'restecg': _restingECG!,
-        'thalch': double.parse(_maxHeartRateController.text),
-        'exang': _exerciseAngina!,
-        'oldpeak': double.parse(_oldpeakController.text),
-        'slope': _slope!,
-        'ca': _ca!,
-        'thal': _thal!,
-      };
+    var result = await _aiService.predictHeart(inputs);
 
-      final result = await _service.predict(input);
+    setState(() {
+      _riskScore = result['risk'];
       
-      setState(() {
-        _result = result;
-        _isLoading = false;
-      });
-
-      _showResultDialog(result);
-
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Prediction error: $e')),
-      );
-    }
-  }
-
-  void _showResultDialog(Map<String, dynamic> result) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Risk Assessment Result'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                result['risk_level'],
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: result['risk_level'] == 'High Risk' ? Colors.red : Colors.green,
-                ),
-              ),
-              SizedBox(height: 10),
-              Text('Probability: ${(result['probability'] * 100).toStringAsFixed(1)}%'),
-              Text('Confidence: ${result['confidence'].toStringAsFixed(1)}%'),
-              SizedBox(height: 20),
-              Text('Top Contributing Factors:', style: TextStyle(fontWeight: FontWeight.bold)),
-              ...((result['top_features'] as List).map((f) => 
-                Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(f['feature']),
-                      Text('${(f['importance'] * 100).toStringAsFixed(1)}%'),
-                    ],
-                  ),
-                )
-              )),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Close'),
-          ),
-        ],
-      ),
-    );
+      // Sort explanations by importance
+      Map<String, double> rawExpl = result['explanation'];
+      _explanations = rawExpl.entries
+          .map((e) => {'feature': e.key, 'importance': e.value.abs()})
+          .toList();
+      _explanations.sort((a, b) => b['importance'].compareTo(a['importance']));
+      
+      // Take top 5 for the chart
+      if (_explanations.length > 5) _explanations = _explanations.sublist(0, 5);
+      
+      _showResult = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: Text('Heart Disease Risk')),
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
-      appBar: AppBar(title: Text('Heart Disease Risk Prediction')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: EdgeInsets.all(16),
-          children: [
-            // Section: Basic Information
-            _buildSectionHeader('Basic Information'),
-            
-            // Age
-            TextFormField(
-              controller: _ageController,
-              decoration: InputDecoration(
-                labelText: 'Age',
-                hintText: 'Enter age in years',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // Sex
-            DropdownButtonFormField<String>(
-              value: _selectedSex,
-              decoration: InputDecoration(
-                labelText: 'Sex',
-                border: OutlineInputBorder(),
-              ),
-              items: ['Male', 'Female']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _selectedSex = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 24),
-
-            // Section: Symptoms
-            _buildSectionHeader('Symptoms'),
-
-            // Chest Pain Type
-            DropdownButtonFormField<String>(
-              value: _selectedChestPainType,
-              decoration: InputDecoration(
-                labelText: 'Chest Pain Type',
-                border: OutlineInputBorder(),
-              ),
-              items: ['typical angina', 'atypical angina', 'non-anginal', 'asymptomatic']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _selectedChestPainType = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // Exercise Induced Angina
-            DropdownButtonFormField<String>(
-              value: _exerciseAngina,
-              decoration: InputDecoration(
-                labelText: 'Exercise Induced Angina',
-                border: OutlineInputBorder(),
-              ),
-              items: ['Yes', 'No']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _exerciseAngina = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 24),
-
-            // Section: Vital Signs
-            _buildSectionHeader('Vital Signs'),
-
-            // Resting Blood Pressure
-            TextFormField(
-              controller: _restingBPController,
-              decoration: InputDecoration(
-                labelText: 'Resting Blood Pressure (mm Hg)',
-                hintText: 'e.g., 120',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // Max Heart Rate
-            TextFormField(
-              controller: _maxHeartRateController,
-              decoration: InputDecoration(
-                labelText: 'Maximum Heart Rate Achieved',
-                hintText: 'e.g., 150',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-            ),
-            SizedBox(height: 24),
-
-            // Section: Lab Results
-            _buildSectionHeader('Lab Results'),
-
-            // Cholesterol
-            TextFormField(
-              controller: _cholesterolController,
-              decoration: InputDecoration(
-                labelText: 'Serum Cholesterol (mg/dl)',
-                hintText: 'e.g., 200',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // Fasting Blood Sugar
-            DropdownButtonFormField<String>(
-              value: _fastingBloodSugar,
-              decoration: InputDecoration(
-                labelText: 'Fasting Blood Sugar > 120 mg/dl',
-                border: OutlineInputBorder(),
-              ),
-              items: ['Yes', 'No']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _fastingBloodSugar = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 24),
-
-            // Section: ECG Results
-            _buildSectionHeader('ECG Results'),
-
-            // Resting ECG
-            DropdownButtonFormField<String>(
-              value: _restingECG,
-              decoration: InputDecoration(
-                labelText: 'Resting ECG Results',
-                border: OutlineInputBorder(),
-              ),
-              items: ['normal', 'ST-T abnormality', 'LV hypertrophy']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _restingECG = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // ST Depression (Oldpeak)
-            TextFormField(
-              controller: _oldpeakController,
-              decoration: InputDecoration(
-                labelText: 'ST Depression (Oldpeak)',
-                hintText: 'e.g., 1.5',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // Slope
-            DropdownButtonFormField<String>(
-              value: _slope,
-              decoration: InputDecoration(
-                labelText: 'Slope of Peak Exercise ST Segment',
-                border: OutlineInputBorder(),
-              ),
-              items: ['upsloping', 'flat', 'downsloping']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _slope = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 24),
-
-            // Section: Cardiac Tests
-            _buildSectionHeader('Cardiac Tests'),
-
-            // Number of Major Vessels
-            DropdownButtonFormField<double>(
-              value: _ca,
-              decoration: InputDecoration(
-                labelText: 'Number of Major Vessels (0-3)',
-                border: OutlineInputBorder(),
-              ),
-              items: [0.0, 1.0, 2.0, 3.0]
-                  .map((n) => DropdownMenuItem(value: n, child: Text(n.toInt().toString())))
-                  .toList(),
-              onChanged: (v) => setState(() => _ca = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 16),
-
-            // Thalassemia
-            DropdownButtonFormField<String>(
-              value: _thal,
-              decoration: InputDecoration(
-                labelText: 'Thalassemia',
-                border: OutlineInputBorder(),
-              ),
-              items: ['normal', 'fixed defect', 'reversable defect']
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _thal = v),
-              validator: (v) => v == null ? 'Required' : null,
-            ),
-            SizedBox(height: 32),
-
-            // Predict Button
-            ElevatedButton(
-              onPressed: _predict,
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('Predict Risk', style: TextStyle(fontSize: 18)),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-
-            if (_result != null) ...[
-              SizedBox(height: 32),
-              FeatureImportanceChart(
-                features: _result!['top_features'],
+      appBar: AppBar(title: Text("Heart Disease Risk")),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              if (_showResult) ...[
+                _buildResultCard(),
+                SizedBox(height: 20),
+                FeatureImportanceChart(features: _explanations), // Explainability
+                Divider(height: 40),
+              ],
+              Text("Patient Vitals", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              SizedBox(height: 10),
+              _buildRow(_buildNumberInput("Age", _ageCtrl), _buildDropdown("Sex", ["Male", "Female"], (v) => _sex = v!)),
+              _buildRow(_buildDropdown("Chest Pain", ["typical angina", "atypical angina", "non-anginal", "asymptomatic"], (v) => _cp = v!), _buildNumberInput("BP (trestbps)", _bpCtrl)),
+              _buildRow(_buildNumberInput("Cholesterol", _cholCtrl), _buildDropdown("Fasting BS > 120", ["TRUE", "FALSE"], (v) => _fbs = v!)),
+              _buildDropdown("Resting ECG", ["normal", "st-t abnormality", "lv hypertrophy"], (v) => _restecg = v!),
+              _buildRow(_buildNumberInput("Max Heart Rate", _thalachCtrl), _buildDropdown("Exercise Angina", ["TRUE", "FALSE"], (v) => _exang = v!)),
+              _buildRow(_buildNumberInput("ST Depression", _oldpeakCtrl), _buildDropdown("Slope", ["upsloping", "flat", "downsloping"], (v) => _slope = v!)),
+              _buildRow(_buildDropdown("Major Vessels (CA)", ["0", "1", "2", "3"], (v) => _ca = v!), _buildDropdown("Thalassemia", ["normal", "fixed defect", "reversible defect"], (v) => _thal = v!)),
+              
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _predict,
+                style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
+                child: Text("Analyze Risk"),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultCard() {
+    bool isHigh = _riskScore > 0.5;
+    return Card(
+      color: isHigh ? Colors.red.shade50 : Colors.green.shade50,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(isHigh ? "HIGH RISK DETECTED" : "LOW RISK", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isHigh ? Colors.red : Colors.green)),
+            Text("Confidence: ${(_riskScore * 100).toStringAsFixed(1)}%", style: TextStyle(fontSize: 18)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  Widget _buildRow(Widget w1, Widget w2) {
+    return Row(children: [Expanded(child: w1), SizedBox(width: 10), Expanded(child: w2)]);
+  }
+
+  Widget _buildNumberInput(String label, TextEditingController ctrl) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Colors.blue[700],
-        ),
+      padding: EdgeInsets.only(bottom: 10),
+      child: TextFormField(
+        controller: ctrl,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(labelText: label, border: OutlineInputBorder()),
+        validator: (v) => v!.isEmpty ? "Required" : null,
       ),
     );
   }
 
-  @override
-  void dispose() {
-    // Dispose controllers
-    _ageController.dispose();
-    _restingBPController.dispose();
-    _cholesterolController.dispose();
-    _maxHeartRateController.dispose();
-    _oldpeakController.dispose();
-    _service.dispose();
-    super.dispose();
+  Widget _buildDropdown(String label, List<String> items, Function(String?) onChanged) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 10),
+      child: DropdownButtonFormField<String>(
+        decoration: InputDecoration(labelText: label, border: OutlineInputBorder()),
+        value: items.contains(label) ? label : items[0], // simple default
+        items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+        onChanged: onChanged,
+      ),
+    );
   }
 }

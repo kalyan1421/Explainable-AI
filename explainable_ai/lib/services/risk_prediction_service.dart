@@ -1,186 +1,136 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 class RiskPredictionService {
-  Interpreter? _interpreter;
-  Map<String, dynamic>? _scaler;
-  Map<String, dynamic>? _mappings;
-  Map<String, dynamic>? _featureImportance;
-  Map<String, dynamic>? _metadata;
-  List<String>? _featureNames;
+  Interpreter? _heartInterpreter;
+  Interpreter? _diabetesInterpreter;
+  
+  Map<String, dynamic>? _heartScaler;
+  Map<String, dynamic>? _diabetesScaler;
+  
+  Map<String, dynamic>? _heartMappings;
+  Map<String, dynamic>? _heartImportance; // For Explainability
+  Map<String, dynamic>? _diabetesImportance; // For Explainability
 
-  // Initialize the model
-  Future<void> initialize(String modelType) async {
+  bool isLoaded = false;
+
+  Future<void> loadAssets() async {
+    if (isLoaded) return;
+
     try {
-      // modelType: 'heart' or 'diabetes'
-      final modelPath = 'assets/${modelType}_model.tflite';
+      // 1. Load TFLite Models
+      _heartInterpreter = await Interpreter.fromAsset('assets/heart_model.tflite');
+      _diabetesInterpreter = await Interpreter.fromAsset('assets/diabetes_model.tflite');
+
+      // 2. Load JSON Metadata
+      _heartScaler = json.decode(await rootBundle.loadString('assets/heart_scaler.json'));
+      _diabetesScaler = json.decode(await rootBundle.loadString('assets/diabetes_scaler.json'));
+      _heartMappings = json.decode(await rootBundle.loadString('assets/heart_mappings.json'));
       
-      // Load TFLite model
-      _interpreter = await Interpreter.fromAsset(modelPath);
-      print('✅ Model loaded: $modelPath');
-
-      // Load scaler
-      final scalerJson = await rootBundle.loadString('assets/${modelType}_scaler.json');
-      _scaler = json.decode(scalerJson);
-      _featureNames = List<String>.from(_scaler!['feature_names']);
-      print('✅ Scaler loaded');
-
-      // Load mappings
+      // Load Feature Importance if available (Optional)
       try {
-        final mappingsJson = await rootBundle.loadString('assets/${modelType}_mappings.json');
-        _mappings = json.decode(mappingsJson);
-        print('✅ Mappings loaded');
+        _heartImportance = json.decode(await rootBundle.loadString('assets/heart_feature_importance.json'));
+        _diabetesImportance = json.decode(await rootBundle.loadString('assets/diabetes_feature_importance.json'));
       } catch (e) {
-        _mappings = {}; // No mappings needed
+        print("⚠️ Feature importance file not found: $e");
       }
 
-      // Load feature importance
-      final importanceJson = await rootBundle.loadString('assets/${modelType}_feature_importance.json');
-      _featureImportance = json.decode(importanceJson);
-      print('✅ Feature importance loaded');
-
-      // Load metadata
-      final metadataJson = await rootBundle.loadString('assets/${modelType}_metadata.json');
-      _metadata = json.decode(metadataJson);
-      print('✅ Metadata loaded');
-
+      isLoaded = true;
+      print("✅ All AI Assets Loaded Successfully");
     } catch (e) {
-      print('❌ Error initializing model: $e');
-      rethrow;
+      print("❌ Error loading AI assets: $e");
     }
   }
 
-  // Convert categorical input using mappings
-  Map<String, dynamic> convertCategoricalInputs(Map<String, dynamic> rawInput) {
-    final convertedInput = Map<String, dynamic>.from(rawInput);
-
-    if (_mappings == null || _mappings!.isEmpty) {
-      return convertedInput;
-    }
-
-    _mappings!.forEach((feature, mapping) {
-      if (rawInput.containsKey(feature)) {
-        final value = rawInput[feature];
-        if (mapping is Map && mapping.containsKey(value.toString())) {
-          convertedInput[feature] = mapping[value.toString()];
-        }
-      }
-    });
-
-    return convertedInput;
-  }
-
-  // Normalize input using scaler
-  List<double> normalizeInput(Map<String, dynamic> input) {
-    if (_scaler == null || _featureNames == null) {
-      throw Exception('Scaler not loaded');
-    }
-
-    final means = List<double>.from(_scaler!['mean']);
-    final stds = List<double>.from(_scaler!['std']);
+  // --- Helper: Standard Scaler (Math) ---
+  List<double> _standardize(List<double> input, Map<String, dynamic> scaler) {
+    List<double> mean = List<double>.from(scaler['mean']);
+    List<double> std = List<double>.from(scaler['std']);
     
-    final normalized = <double>[];
-    
-    for (int i = 0; i < _featureNames!.length; i++) {
-      final featureName = _featureNames![i];
-      
-      if (!input.containsKey(featureName)) {
-        throw Exception('Missing feature: $featureName');
-      }
-      
-      final value = input[featureName].toDouble();
-      final normalizedValue = (value - means[i]) / stds[i];
-      normalized.add(normalizedValue);
+    List<double> normalized = [];
+    for (int i = 0; i < input.length; i++) {
+      normalized.add((input[i] - mean[i]) / std[i]);
     }
-    
     return normalized;
   }
 
-  // Run prediction
-  Future<Map<String, dynamic>> predict(Map<String, dynamic> rawInput) async {
-    if (_interpreter == null) {
-      throw Exception('Model not initialized');
-    }
+  // --- 1. PREDICT HEART DISEASE ---
+  Future<Map<String, dynamic>> predictHeart(Map<String, dynamic> userInputs) async {
+    await loadAssets();
 
-    try {
-      // Step 1: Convert categorical inputs
-      final convertedInput = convertCategoricalInputs(rawInput);
-      print('📝 Converted input: $convertedInput');
+    List<double> numericVector = [];
+    List<String> featureNames = List<String>.from(_heartScaler!['feature_names']);
 
-      // Step 2: Normalize input
-      final normalizedInput = normalizeInput(convertedInput);
-      print('📊 Normalized input: $normalizedInput');
-
-      // Step 3: Prepare input tensor
-      final input = [normalizedInput];
-      final output = List.filled(1, 0.0).reshape([1, 1]);
-
-      // Step 4: Run inference
-      _interpreter!.run(input, output);
-
-      final riskProbability = output[0][0] as double;
-      final riskLevel = riskProbability >= 0.5 ? 'High Risk' : 'Low Risk';
-
-      print('🎯 Prediction: $riskProbability ($riskLevel)');
-
-      // Step 5: Get top contributing features
-      final topFeatures = _getTopContributingFeatures(convertedInput, 5);
-
-      return {
-        'probability': riskProbability,
-        'risk_level': riskLevel,
-        'confidence': (riskProbability >= 0.5 ? riskProbability : 1 - riskProbability) * 100,
-        'top_features': topFeatures,
-        'metadata': _metadata,
-      };
-
-    } catch (e) {
-      print('❌ Prediction error: $e');
-      rethrow;
-    }
-  }
-
-  // Get top contributing features for explainability
-  List<Map<String, dynamic>> _getTopContributingFeatures(
-    Map<String, dynamic> input, 
-    int topN
-  ) {
-    if (_featureImportance == null) return [];
-
-    final contributions = <Map<String, dynamic>>[];
-
-    _featureImportance!.forEach((feature, importance) {
-      if (input.containsKey(feature)) {
-        contributions.add({
-          'feature': feature,
-          'value': input[feature],
-          'importance': importance,
-        });
+    for (String feature in featureNames) {
+      var val = userInputs[feature];
+      if (val is String) {
+        if (_heartMappings!.containsKey(feature) && _heartMappings![feature].containsKey(val)) {
+          numericVector.add(_heartMappings![feature][val].toDouble());
+        } else {
+          numericVector.add(0.0);
+        }
+      } else {
+        numericVector.add(double.parse(val.toString()));
       }
-    });
-
-    contributions.sort((a, b) => (b['importance'] as double).compareTo(a['importance'] as double));
-    
-    return contributions.take(topN).toList();
-  }
-
-  // Get feature names for UI
-  List<String> getFeatureNames() {
-    return _featureNames ?? [];
-  }
-
-  // Get mappings for a specific feature
-  Map<String, int>? getMappingsForFeature(String feature) {
-    if (_mappings == null || !_mappings!.containsKey(feature)) {
-      return null;
     }
-    return Map<String, int>.from(_mappings![feature]);
+
+    var processedInput = _standardize(numericVector, _heartScaler!);
+    var inputTensor = [processedInput];
+    var outputTensor = List.filled(1 * 1, 0.0).reshape([1, 1]);
+    
+    _heartInterpreter!.run(inputTensor, outputTensor);
+    
+    double riskScore = outputTensor[0][0];
+
+    // Generate Explanation using feature importance directly
+    Map<String, double> explanation = {};
+    if (_heartImportance != null) {
+      for (String feature in featureNames) {
+        if (_heartImportance!.containsKey(feature)) {
+          double importance = (_heartImportance![feature] as num).toDouble();
+          explanation[feature] = importance;
+        }
+      }
+    }
+
+    return {
+      'risk': riskScore,
+      'explanation': explanation
+    };
   }
 
-  // Dispose resources
-  void dispose() {
-    _interpreter?.close();
+  // --- 2. PREDICT DIABETES ---
+  Future<Map<String, dynamic>> predictDiabetes(List<double> inputs) async {
+    await loadAssets();
+
+    // 1. Normalize
+    var processedInput = _standardize(inputs, _diabetesScaler!);
+
+    // 2. Inference
+    var inputTensor = [processedInput];
+    var outputTensor = List.filled(1 * 1, 0.0).reshape([1, 1]);
+
+    _diabetesInterpreter!.run(inputTensor, outputTensor);
+
+    double risk = outputTensor[0][0];
+
+    // 3. Explanation using feature importance directly
+    Map<String, double> explanation = {};
+    List<String> featureNames = List<String>.from(_diabetesScaler!['feature_names']);
+    
+    if (_diabetesImportance != null) {
+      for (String feature in featureNames) {
+        if (_diabetesImportance!.containsKey(feature)) {
+          double importance = (_diabetesImportance![feature] as num).toDouble();
+          explanation[feature] = importance;
+        }
+      }
+    }
+
+    return {
+      'risk': risk,
+      'explanation': explanation
+    };
   }
 }
