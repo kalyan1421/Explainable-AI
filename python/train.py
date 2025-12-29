@@ -10,72 +10,67 @@ import os
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 EPOCHS = 10
-DATA_DIR = '../data/chest_xray'  # Ensure dataset is unzipped here
+DATA_DIR = '/Users/kalyan/Client project/Explainable AI/python/data/chest_xray' # Ensure this path is correct
 
-# --- 1. Data Preparation (Augmentation & Loading) ---
-# Augmentation helps prevent overfitting on the 5,863 images
+# --- 1. Data Preparation ---
+# Important: The model expects inputs scaled 0-1 (rescale=1./255)
 train_datagen = ImageDataGenerator(
     rescale=1./255,
     rotation_range=15,
     zoom_range=0.2,
-    horizontal_flip=True,
-    brightness_range=[0.8, 1.2]
+    horizontal_flip=True
 )
 
-test_datagen = ImageDataGenerator(rescale=1./255)
+val_datagen = ImageDataGenerator(rescale=1./255)
 
+print("Loading Data...")
 train_generator = train_datagen.flow_from_directory(
     os.path.join(DATA_DIR, 'train'),
     target_size=IMG_SIZE,
     batch_size=BATCH_SIZE,
-    class_mode='binary',
-    color_mode='rgb'
+    class_mode='binary'  # 0=Normal, 1=Pneumonia
 )
 
-val_generator = test_datagen.flow_from_directory(
+val_generator = val_datagen.flow_from_directory(
     os.path.join(DATA_DIR, 'val'),
     target_size=IMG_SIZE,
     batch_size=BATCH_SIZE,
     class_mode='binary'
 )
 
-# --- 2. Model Architecture (Transfer Learning) ---
-# We use MobileNetV2 pre-trained on ImageNet for better feature extraction
+# --- 2. Model Architecture ---
+# MobileNetV2 is great for X-rays. We exclude the top to add our own classifier.
 base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-
-# Freeze base layers to keep pre-trained patterns
-base_model.trainable = False
+base_model.trainable = False  # Freeze base model initially
 
 x = base_model.output
 x = GlobalAveragePooling2D()(x)
 x = Dense(128, activation='relu')(x)
-x = Dropout(0.3)(x)  # Reduces overfitting
-predictions = Dense(1, activation='sigmoid')(x)  # Binary output: Normal (0) vs Pneumonia (1)
+x = Dropout(0.3)(x)
+predictions = Dense(1, activation='sigmoid')(x)
 
 model = Model(inputs=base_model.input, outputs=predictions)
 
-# --- 3. Training ---
-model.compile(optimizer=Adam(learning_rate=0.0001),
+model.compile(optimizer=Adam(learning_rate=0.001),
               loss='binary_crossentropy',
               metrics=['accuracy'])
 
+# --- 3. Training ---
 print("Starting Training...")
-history = model.fit(
+model.fit(
     train_generator,
-    epochs=EPOCHS,
-    validation_data=val_generator,
-    steps_per_epoch=train_generator.samples // BATCH_SIZE,
-    validation_steps=val_generator.samples // BATCH_SIZE
+    epochs=5,  # Quick train for MVP
+    validation_data=val_generator
 )
 
-# --- 4. Fine-Tuning (Optional but recommended for best results) ---
-print("Fine-tuning base model...")
+# --- 4. Fine-Tuning (Critical for Accuracy) ---
+print("Fine-tuning...")
 base_model.trainable = True
-# Fine-tune only the top 20 layers
+# Freeze early layers, train only deep layers
 for layer in base_model.layers[:-20]:
     layer.trainable = False
 
-model.compile(optimizer=Adam(learning_rate=1e-5),  # Lower learning rate
+model.compile(optimizer=Adam(learning_rate=1e-5),  # Low learning rate
               loss='binary_crossentropy',
               metrics=['accuracy'])
 
@@ -86,5 +81,6 @@ model.fit(
 )
 
 # --- 5. Save Model ---
-model.save('../models/pneumonia_model_mvp.h5')
-print("Model saved as pneumonia_model_mvp.h5")
+# We save in .h5 format which handles custom architectures well
+model.save('../models/pneumonia_model.h5')
+print("Model saved to ../models/pneumonia_model.h5")
