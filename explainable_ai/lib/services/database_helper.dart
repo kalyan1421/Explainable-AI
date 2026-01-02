@@ -19,7 +19,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'explainable_ai.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         // Predictions table for offline history
         await db.execute('''
@@ -49,12 +49,34 @@ class DatabaseHelper {
             updated_at TEXT
           )
         ''');
+        
+        // Chat messages table for conversation history
+        await db.execute('''
+          CREATE TABLE chat_messages(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            synced INTEGER DEFAULT 0
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE predictions ADD COLUMN risk_score REAL');
           await db.execute('ALTER TABLE predictions ADD COLUMN risk_level TEXT');
           await db.execute('ALTER TABLE predictions ADD COLUMN synced INTEGER DEFAULT 0');
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS chat_messages(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              role TEXT NOT NULL,
+              content TEXT NOT NULL,
+              timestamp TEXT NOT NULL,
+              synced INTEGER DEFAULT 0
+            )
+          ''');
         }
       },
     );
@@ -198,5 +220,41 @@ class DatabaseHelper {
       where: 'timestamp < ? AND synced = 1',
       whereArgs: [cutoffDate.toIso8601String()],
     );
+  }
+
+  // --- CHAT MESSAGES ---
+  
+  Future<int> saveChatMessage({
+    required String role,
+    required String content,
+    DateTime? timestamp,
+  }) async {
+    final db = await database;
+    return await db.insert('chat_messages', {
+      'role': role,
+      'content': content,
+      'timestamp': (timestamp ?? DateTime.now()).toIso8601String(),
+      'synced': 0,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getChatHistory({int? limit}) async {
+    final db = await database;
+    return await db.query(
+      'chat_messages',
+      orderBy: 'timestamp ASC',
+      limit: limit,
+    );
+  }
+
+  Future<void> clearChatHistory() async {
+    final db = await database;
+    await db.delete('chat_messages');
+  }
+
+  Future<int> getChatMessageCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM chat_messages');
+    return result.first['count'] as int;
   }
 }

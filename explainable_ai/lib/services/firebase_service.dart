@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:typed_data';
 
 class FirebaseService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -51,6 +53,35 @@ class FirebaseService {
       'reviewedBy': '',
       'reviewedAt': null,
     });
+  }
+
+  // Upload PDF report to storage and attach URL on record
+  Future<String> uploadReportForRecord(String recordId, Uint8List pdfBytes) async {
+    if (userId == null) throw Exception("User not logged in");
+
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('reports/$userId/$recordId.pdf');
+
+    await ref.putData(
+      pdfBytes,
+      SettableMetadata(contentType: 'application/pdf'),
+    );
+
+    final url = await ref.getDownloadURL();
+
+    await _db.collection('records').doc(recordId).update({
+      'reportUrl': url,
+      'reportGeneratedAt': FieldValue.serverTimestamp(),
+    });
+
+    await _addAuditLog(
+      action: 'UPLOAD_REPORT',
+      recordId: recordId,
+      details: {'hasUrl': true},
+    );
+
+    return url;
   }
 
   // --- 2. GET MY HISTORY (Patient View) ---

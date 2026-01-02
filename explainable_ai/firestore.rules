@@ -63,7 +63,7 @@ service cloud.firestore {
       // Patients can update their own records (limited fields)
       allow update: if isOwner(resource.data.patientId) && (
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['inputs', 'explanation'])
+          .hasOnly(['inputs', 'explanation', 'reportUrl', 'reportGeneratedAt'])
       );
       
       // No one can delete medical records (for audit compliance)
@@ -92,4 +92,3 @@ service cloud.firestore {
     }
   }
 }
-

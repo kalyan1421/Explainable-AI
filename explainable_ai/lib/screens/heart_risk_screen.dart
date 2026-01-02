@@ -38,6 +38,11 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
   double _riskScore = 0.0;
   List<Map<String, dynamic>> _explanations = [];
 
+  final String _simpleExplanation = "This checks for potential heart issues by looking at chest pain type, blood pressure, and cholesterol.";
+  final List<String> _recommendations = const [
+    "Limit saturated fats, manage stress, and ensure you get 7-8 hours of sleep.",
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -127,6 +132,8 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
               // AI Disclaimer
               _buildDisclaimer(),
               SizedBox(height: 16),
+              _buildPatientFriendlyCard(),
+              SizedBox(height: 16),
               
               if (_showResult) ...[
                 _buildResultCard(),
@@ -188,6 +195,34 @@ class _HeartRiskScreenState extends State<HeartRiskScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPatientFriendlyCard() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Simple Explanation", style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 6),
+            Text(_simpleExplanation),
+            SizedBox(height: 8),
+            Text("Recommendations", style: TextStyle(fontWeight: FontWeight.bold)),
+            ..._recommendations.map((tip) => Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(child: Text(tip)),
+                ],
+              ),
+            )),
+          ],
+        ),
       ),
     );
   }

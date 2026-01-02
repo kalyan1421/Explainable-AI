@@ -29,6 +29,11 @@ class _PneumoniaScreenState extends State<PneumoniaScreen> {
   final FirebaseService _db = FirebaseService();
   final DatabaseHelper _localDb = DatabaseHelper();
 
+  final String _simpleExplanation = "Pneumonia is an infection that inflames the air sacs in one or both lungs. This tool scans chest X-rays for signs of infection.";
+  final List<String> _recommendations = const [
+    "Finish all prescribed antibiotics, drink plenty of fluids, and get plenty of rest.",
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -168,6 +173,8 @@ class _PneumoniaScreenState extends State<PneumoniaScreen> {
         padding: EdgeInsets.all(20),
         child: Column(
           children: [
+            _buildPatientFriendlyCard(),
+            SizedBox(height: 12),
             Container(
               height: 300, width: 300,
               decoration: BoxDecoration(
@@ -222,6 +229,34 @@ class _PneumoniaScreenState extends State<PneumoniaScreen> {
                 textStyle: TextStyle(fontSize: 18)
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPatientFriendlyCard() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Simple Explanation", style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 6),
+            Text(_simpleExplanation),
+            SizedBox(height: 8),
+            Text("Recommendations", style: TextStyle(fontWeight: FontWeight.bold)),
+            ..._recommendations.map((tip) => Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(child: Text(tip)),
+                ],
+              ),
+            )),
           ],
         ),
       ),

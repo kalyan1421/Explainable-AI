@@ -30,6 +30,11 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
   bool _isLoading = false;
   List<Map<String, dynamic>> _explanations = [];
 
+  final String _simpleExplanation = "Diabetes means your blood sugar is too high. This tool calculates your risk based on glucose levels, weight, and age.";
+  final List<String> _recommendations = const [
+    "Cut down on sugary drinks, eat more leafy greens, and walk daily.",
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +124,8 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
               // AI Disclaimer
               _buildDisclaimer(),
               SizedBox(height: 16),
+              _buildPatientFriendlyCard(),
+              SizedBox(height: 16),
               
               if (_showResult) ...[
                 _buildResultCard(),
@@ -185,6 +192,34 @@ class _DiabetesRiskScreenState extends State<DiabetesRiskScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPatientFriendlyCard() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Simple Explanation", style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 6),
+            Text(_simpleExplanation),
+            SizedBox(height: 8),
+            Text("Recommendations", style: TextStyle(fontWeight: FontWeight.bold)),
+            ..._recommendations.map((tip) => Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(child: Text(tip)),
+                ],
+              ),
+            )),
+          ],
+        ),
       ),
     );
   }

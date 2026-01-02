@@ -1,17 +1,36 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:image/image.dart' as img;
 
 class RiskPredictionService {
+  // Existing Interpreters
   Interpreter? _heartInterpreter;
   Interpreter? _diabetesInterpreter;
   
+  // New Interpreters
+  Interpreter? _skinCancerInterpreter;
+  Interpreter? _strokeInterpreter;
+  Interpreter? _fetalInterpreter;
+  Interpreter? _parkinsonsInterpreter;
+
+  // Existing Scalers & Metadata
   Map<String, dynamic>? _heartScaler;
   Map<String, dynamic>? _diabetesScaler;
-  
   Map<String, dynamic>? _heartMappings;
   Map<String, dynamic>? _heartImportance; // For Explainability
   Map<String, dynamic>? _diabetesImportance; // For Explainability
+
+  // New Scalers
+  Map<String, dynamic>? _strokeScaler;
+  Map<String, dynamic>? _fetalScaler;
+  Map<String, dynamic>? _parkinsonsScaler;
+
+  List<String> _skinLabels = [
+    'Actinic keratoses', 'Basal cell carcinoma', 'Benign keratosis',
+    'Dermatofibroma', 'Melanoma', 'Nevus', 'Vascular lesion'
+  ];
 
   bool isLoaded = false;
 
@@ -22,11 +41,55 @@ class RiskPredictionService {
       // 1. Load TFLite Models
       _heartInterpreter = await Interpreter.fromAsset('assets/heart_model.tflite');
       _diabetesInterpreter = await Interpreter.fromAsset('assets/diabetes_model.tflite');
+      
+      // Load new models (with error handling if files don't exist yet)
+      try {
+        _skinCancerInterpreter = await Interpreter.fromAsset('assets/skin_cancer.tflite');
+      } catch (e) {
+        print("⚠️ Skin cancer model not found: $e");
+      }
+      
+      try {
+        _strokeInterpreter = await Interpreter.fromAsset('assets/stroke_model.tflite');
+      } catch (e) {
+        print("⚠️ Stroke model not found: $e");
+      }
+      
+      try {
+        _fetalInterpreter = await Interpreter.fromAsset('assets/fetal_model.tflite');
+      } catch (e) {
+        print("⚠️ Fetal health model not found: $e");
+      }
+      
+      try {
+        _parkinsonsInterpreter = await Interpreter.fromAsset('assets/parkinsons_model.tflite');
+      } catch (e) {
+        print("⚠️ Parkinson's model not found: $e");
+      }
 
       // 2. Load JSON Metadata
       _heartScaler = json.decode(await rootBundle.loadString('assets/heart_scaler.json'));
       _diabetesScaler = json.decode(await rootBundle.loadString('assets/diabetes_scaler.json'));
       _heartMappings = json.decode(await rootBundle.loadString('assets/heart_mappings.json'));
+      
+      // Load new scalers (with error handling)
+      try {
+        _strokeScaler = json.decode(await rootBundle.loadString('assets/stroke_scaler.json'));
+      } catch (e) {
+        print("⚠️ Stroke scaler not found: $e");
+      }
+      
+      try {
+        _fetalScaler = json.decode(await rootBundle.loadString('assets/fetal_scaler.json'));
+      } catch (e) {
+        print("⚠️ Fetal scaler not found: $e");
+      }
+      
+      try {
+        _parkinsonsScaler = json.decode(await rootBundle.loadString('assets/parkinsons_scaler.json'));
+      } catch (e) {
+        print("⚠️ Parkinson's scaler not found: $e");
+      }
       
       // Load Feature Importance if available (Optional)
       try {
@@ -136,5 +199,103 @@ class RiskPredictionService {
       'risk': risk,
       'explanation': explanation
     };
+  }
+
+  // --- 3. PREDICT SKIN CANCER (Image) ---
+  Future<Map<String, dynamic>> predictSkinCancer(Uint8List imageBytes) async {
+    await loadAssets();
+    
+    if (_skinCancerInterpreter == null) {
+      throw Exception("Skin cancer model not loaded");
+    }
+
+    // Resize to 224x224
+    img.Image? original = img.decodeImage(imageBytes);
+    if (original == null) {
+      throw Exception("Failed to decode image");
+    }
+    img.Image resized = img.copyResize(original, width: 224, height: 224);
+
+    // Normalize to [-1, 1] for MobileNetV2
+    var input = List.generate(1, (i) => List.generate(224, (y) => List.generate(224, (x) {
+      var pixel = resized.getPixel(x, y);
+      return [
+        ((pixel.r / 255.0) - 0.5) * 2.0,
+        ((pixel.g / 255.0) - 0.5) * 2.0,
+        ((pixel.b / 255.0) - 0.5) * 2.0
+      ];
+    })));
+
+    // Output: [1, 7]
+    var output = List.filled(1 * 7, 0.0).reshape([1, 7]);
+    _skinCancerInterpreter!.run(input, output);
+
+    // Find max probability
+    List<double> probs = List<double>.from(output[0]);
+    double maxProb = 0.0;
+    int maxIndex = 0;
+    for(int i = 0; i < probs.length; i++) {
+      if(probs[i] > maxProb) {
+        maxProb = probs[i];
+        maxIndex = i;
+      }
+    }
+
+    return {
+      'label': _skinLabels[maxIndex],
+      'confidence': maxProb,
+      'probabilities': probs
+    };
+  }
+
+  // --- 4. PREDICT STROKE (Tabular) ---
+  Future<Map<String, dynamic>> predictStroke(List<double> inputs) async {
+    await loadAssets();
+    
+    if (_strokeInterpreter == null || _strokeScaler == null) {
+      throw Exception("Stroke model or scaler not loaded");
+    }
+    
+    var processedInput = _standardize(inputs, _strokeScaler!);
+    var output = List.filled(1 * 1, 0.0).reshape([1, 1]);
+    _strokeInterpreter!.run([processedInput], output);
+    return {'risk': output[0][0]};
+  }
+
+  // --- 5. PREDICT FETAL HEALTH (Multi-class) ---
+  Future<Map<String, dynamic>> predictFetalHealth(List<double> inputs) async {
+    await loadAssets();
+    
+    if (_fetalInterpreter == null || _fetalScaler == null) {
+      throw Exception("Fetal health model or scaler not loaded");
+    }
+    
+    var processedInput = _standardize(inputs, _fetalScaler!);
+    
+    // Output shape [1, 3] for 3 classes (Normal, Suspect, Pathological)
+    var output = List.filled(1 * 3, 0.0).reshape([1, 3]);
+    _fetalInterpreter!.run([processedInput], output);
+    
+    List<double> probs = List<double>.from(output[0]);
+    int predictedClass = probs.indexOf(probs.reduce((curr, next) => curr > next ? curr : next));
+    
+    // Map 0,1,2 to labels
+    String label = ["Normal", "Suspect", "Pathological"][predictedClass];
+    
+    return {'label': label, 'confidence': probs[predictedClass]};
+  }
+
+  // --- 6. PREDICT PARKINSON'S (Voice Features) ---
+  Future<Map<String, dynamic>> predictParkinsons(List<double> inputs) async {
+    await loadAssets();
+    
+    if (_parkinsonsInterpreter == null || _parkinsonsScaler == null) {
+      throw Exception("Parkinson's model or scaler not loaded");
+    }
+    
+    var processedInput = _standardize(inputs, _parkinsonsScaler!);
+    var output = List.filled(1 * 1, 0.0).reshape([1, 1]);
+    _parkinsonsInterpreter!.run([processedInput], output);
+    return {'score': output[0][0]}; // Regression score or probability
   }
 }
