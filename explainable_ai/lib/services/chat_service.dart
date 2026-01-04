@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ChatMessage {
   final String role; // 'user' or 'assistant'
@@ -27,11 +28,19 @@ class ChatMessage {
 
 class ChatService {
   // ⚠️ SECURITY NOTE: In production, store API key securely (e.g., Firebase Remote Config, environment variables, or secure storage)
-  // Set the API key via environment variable: flutter run --dart-define=OPENAI_API_KEY=your_key_here
-  static const String _apiKey = String.fromEnvironment(
-    'OPENAI_API_KEY',
-    defaultValue: '', // API key must be provided via environment variable
-  );
+  // The API key is loaded from .env file or can be set via --dart-define=OPENAI_API_KEY=your_key_here
+  static String get _apiKey {
+    // First try to get from .env file
+    final envKey = dotenv.env['OPENAI_API_KEY'];
+    if (envKey != null && envKey.isNotEmpty) {
+      return envKey;
+    }
+    // Fallback to dart-define (for CI/CD or command line)
+    return const String.fromEnvironment(
+      'OPENAI_API_KEY',
+      defaultValue: '', // API key must be provided via .env file or --dart-define
+    );
+  }
   static const String _endpoint = 'https://api.openai.com/v1/chat/completions';
   static const String _model = 'gpt-4o-mini';
   static const int _maxTokens = 500; // Increased for better responses
@@ -45,8 +54,9 @@ class ChatService {
 
   /// Send a message with conversation context
   Future<String> sendMessage(String prompt, {List<ChatMessage>? history}) async {
-    if (_apiKey.isEmpty || _apiKey.contains('defaultValue')) {
-      throw Exception("OpenAI API key is missing or invalid");
+    final apiKey = _apiKey;
+    if (apiKey.isEmpty) {
+      throw Exception("OpenAI API key is missing. Please create a .env file with OPENAI_API_KEY=your_key_here or use --dart-define=OPENAI_API_KEY=your_key_here");
     }
     if (prompt.trim().isEmpty) return _refusal;
 
@@ -86,7 +96,7 @@ class ChatService {
       final response = await http.post(
         Uri.parse(_endpoint),
         headers: {
-          "Authorization": "Bearer $_apiKey",
+          "Authorization": "Bearer $apiKey",
           "Content-Type": "application/json",
         },
         body: jsonEncode(payload),
