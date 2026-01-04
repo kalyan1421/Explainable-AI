@@ -192,3 +192,4 @@ class _SkinCancerScreenState extends State<SkinCancerScreen> {
     );
   }
 }
+

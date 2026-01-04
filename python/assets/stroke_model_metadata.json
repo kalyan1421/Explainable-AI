@@ -1,0 +1,38 @@
+{
+  "model_type": "tflite",
+  "conversion_date": "2026-01-04 10:04:28",
+  "source_model": "models/stroke_model.keras",
+  "quantization": false,
+  "input_shape": [
+    1,
+    14
+  ],
+  "output_shape": [
+    1,
+    1
+  ],
+  "input_dtype": "<class 'numpy.float32'>",
+  "output_dtype": "<class 'numpy.float32'>",
+  "file_size_bytes": 193832,
+  "file_size_kb": 189.29,
+  "expected_features": 14,
+  "original_features": [
+    "age",
+    "hypertension",
+    "heart_disease",
+    "avg_glucose_level",
+    "bmi"
+  ],
+  "requires_feature_engineering": true,
+  "engineered_features": [
+    "age_glucose",
+    "bmi_glucose",
+    "age_bmi",
+    "health_risk",
+    "age_squared",
+    "bmi_squared",
+    "age_group_risk",
+    "glucose_risk",
+    "bmi_category"
+  ]
+}

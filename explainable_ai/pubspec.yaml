@@ -101,7 +101,9 @@ flutter:
     - assets/pneumonia_weights.json
     - assets/skin_cancer.tflite
     - assets/skin_labels.txt
-
+    - assets/stroke_model.tflite
+    - assets/stroke_scaler.json
+    - assets/stroke_model_metadata.json
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

@@ -1,0 +1,69 @@
+{
+  "model_version": "2.0",
+  "training_date": "2026-01-04 09:56:32",
+  "original_features": [
+    "age",
+    "hypertension",
+    "heart_disease",
+    "avg_glucose_level",
+    "bmi"
+  ],
+  "engineered_features": [
+    "age_glucose",
+    "bmi_glucose",
+    "age_bmi",
+    "health_risk",
+    "age_squared",
+    "bmi_squared",
+    "age_group_risk",
+    "glucose_risk",
+    "bmi_category"
+  ],
+  "total_features": 14,
+  "optimal_threshold": 0.5895407199859619,
+  "metrics": {
+    "accuracy": 0.7546614408493042,
+    "auc": 0.8378121852874756,
+    "loss": 0.37825530767440796
+  },
+  "model_architecture": {
+    "input_shape": 14,
+    "layers": [
+      {
+        "type": "Dense",
+        "units": 256,
+        "activation": "relu"
+      },
+      {
+        "type": "Dense",
+        "units": 128,
+        "activation": "relu"
+      },
+      {
+        "type": "Dense",
+        "units": 64,
+        "activation": "relu"
+      },
+      {
+        "type": "Dense",
+        "units": 32,
+        "activation": "relu"
+      },
+      {
+        "type": "Dense",
+        "units": 16,
+        "activation": "relu"
+      },
+      {
+        "type": "Dense",
+        "units": 1,
+        "activation": "sigmoid"
+      }
+    ]
+  },
+  "training_config": {
+    "used_smote": true,
+    "used_feature_engineering": true,
+    "scaler_type": "StandardScaler"
+  }
+}
