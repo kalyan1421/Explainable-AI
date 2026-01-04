@@ -1,5 +1,10 @@
 # Python
 __pycache__/
+/models/
+/assets/
+/windows/
+/data/
+processed_skin_cancer/
 *.py[cod]
 *$py.class
 *.so
