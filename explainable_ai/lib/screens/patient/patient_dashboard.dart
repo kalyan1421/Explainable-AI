@@ -97,22 +97,6 @@ class HomeTab extends StatelessWidget {
           ),
           _menuCard(
             context,
-            "Fetal Health",
-            "Maternal & Fetal AI Analysis",
-            Icons.child_care,
-            Colors.pink,
-            FetalHealthScreen(),
-          ),
-          _menuCard(
-            context,
-            "Parkinson's",
-            "Voice pattern analysis",
-            Icons.hearing,
-            Colors.deepPurple,
-            ParkinsonsScreen(),
-          ),
-          _menuCard(
-            context,
             "Health Chatbot",
             "Ask health-only questions safely",
             Icons.chat_bubble_outline,

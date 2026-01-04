@@ -54,7 +54,9 @@ htmlcov/
 .DS_Store
 
 # Data files (uncomment if you don't want to commit large datasets)
-# python/data/
+python/data/
+explainable_ai/assets/
+python/assets/
 
 # Environment variables
 .env
