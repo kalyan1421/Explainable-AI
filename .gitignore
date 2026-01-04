@@ -4,7 +4,7 @@ __pycache__/
 /assets/
 /windows/
 /data/
-processed_skin_cancer/
+python/processed_skin_cancer/
 *.py[cod]
 *$py.class
 *.so
